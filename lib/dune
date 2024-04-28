@@ -1,0 +1,5 @@
+(library
+ (name bogue_inkscape)
+ (public_name bogue-inkscape)
+ (libraries xmlm)
+)
