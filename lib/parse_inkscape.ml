@@ -2,7 +2,7 @@
 
    Copyright Vu Ngoc San 2024
 
-   This module parses an inkscape file and produces an intermediate
+   This module parses an Inkscape file and produces an intermediate
    representation
 *)
 
@@ -26,6 +26,8 @@ type unit = Cm | Mm | Q | In | Pc | Pt | Px
 
 type color = int * int * int * int (* RGBA *)
 
+let black = (0,0,0,255)
+
 (* Only Translate is implemented
    https://www.w3.org/TR/SVG/coords.html#TransformProperty *)
 type transform =
@@ -42,10 +44,14 @@ type style = {
 let no_style = { fill = None; stroke_color = None;
                  stroke_width = None; radius = None }
 
-type rect =
-  { id : string; label : string option; title : string option; desc : string option;
-    x : float; y : float; w : float; h : float;
-    style : style }
+type rect = {
+  id : string;
+  label : string option;
+  title : string option;
+  desc : string option;
+  x : float; y : float; w : float; h : float;
+  style : style
+}
 
 type canvas = {
   viewport : rect;
@@ -55,12 +61,23 @@ type canvas = {
   yscale : float;
 }
 
-type tspan = { xpos : float; ypos : float ; text : string }
-type text = tspan list
+type tspan = { id : string; x : float; y : float ; text : string }
+(* x,y is the base position of the first glyph, usually bottom left point of the
+   letter (on the baseline). It's not the top-left corner of the box containing
+   the text!*)
+
+type text = {
+  id : string;
+  color : color;
+  font_size : float;
+  font_family : string;
+  texts : tspan list
+}
 
 type obj =
   | Rect of rect
   | Image of (rect * string)
+  | Text of text
   | Group of group
 and group = rect * (obj list) * (transform list)
 
@@ -71,9 +88,14 @@ type var = string * string
 type inkscape =
   | Svg of svg
   | Obj of obj
+  | Tspan of tspan
   | Connection of connection
   | Var of var
   | Ignore
+
+let rect_of_pos ?(id = "tmp") x y =
+  { id; x; y; w=0.; h=0.;
+    label = None; title = None; desc = None; style = no_style }
 
 let find_attr_opt a name =
   List.find_opt (fun ((_, n), _) -> n = name) a
@@ -183,15 +205,17 @@ let parse_opacity = function
 
 let option_bind f a = Option.bind a f
 
+let style_to_list s =
+  String.split_on_char ';' s
+  |> List.map (fun param ->
+      match String.split_on_char ':' param with
+      | [key; value] -> key, value
+      | _ -> print_endline (sprintf "Wrong parameter string [%s]" param);
+        param, "")
+
 let parse_style ~radius s =
   (* First convert the style string to an assoc List *)
-  let map =
-    String.split_on_char ';' s
-    |> List.map (fun param ->
-        match String.split_on_char ':' param with
-        | [key; value] -> key, value
-        | _ -> print_endline (sprintf "Wrong parameter string [%s]" param);
-          param, "") in
+  let map = style_to_list s in
   let opacity = List.assoc_opt "opacity" map
                 |> parse_opacity in
   let fill = match List.assoc_opt "fill" map with
@@ -220,7 +244,8 @@ let parse_svg a : canvas =
   let yscale = height /. h in
   let id = find_attr a "id" in
   let label = find_attr_opt a "label" in
-  let viewport = { id; label; title = None; desc = None; x; y; w; h; style = no_style } in
+  let viewport = { id; label; title = None; desc = None; x; y; w; h;
+                   style = no_style } in
   { viewport; width; height; xscale; yscale }
 
 let option_to_list = function
@@ -237,7 +262,8 @@ let parse_group a =
   print_endline (sprintf "Group %sid=%s" smode id);
   let tlist = find_attr_opt a "transform" |> Option.map parse_transform
               |> option_to_list in
-  { id; label; title = None; desc = None; x=0.; y=0.; w=0.; h=0.; style = no_style },
+  { id; label; title = None; desc = None; x=0.; y=0.; w=0.; h=0.;
+    style = no_style },
   [], tlist
 (* In fact, we don't need w and h, except for the main svg object *)
 
@@ -276,6 +302,24 @@ let parse_image a =
   let href = find_attr a "href" in
   r, href
 
+let parse_text a =
+  let id = find_attr a "id" in
+  let style = find_attr a "style" |> style_to_list in
+  let font_family = List.assoc "font-family" style in
+  let font_size, unit = List.assoc "font-size" style |> parse_dim in
+  let opacity = List.assoc_opt "fill-opacity" style |> parse_opacity in
+  let color = List.assoc_opt "fill" style
+              |> option_bind (parse_color opacity)
+              |> Option.value ~default:black in
+  let font_size = convert_dim font_size unit in
+  { id; color; font_size; font_family; texts = [] }
+
+let parse_tspan a =
+  let id = find_attr a "id" in
+  let x = find_float a "x" in
+  let y = find_float a "y" in
+  { id; x; y; text = "" }
+
 let parse_element a = function
   | "svg" -> Svg (parse_svg a, [])
   | "g" -> Obj (Group (parse_group a))
@@ -288,6 +332,8 @@ let parse_element a = function
   | "title" -> Var (parse_title a)
   | "desc" -> Var ("desc", "")
   | "image" -> Obj (Image (parse_image a))
+  | "text" -> Obj (Text (parse_text a))
+  | "tspan" -> Tspan (parse_tspan a)
   | _ -> Ignore
 
 let get_vars list =
@@ -302,9 +348,23 @@ let find_var key content =
       | _ -> None) content
   |> List.assoc_opt key
 
+let find_tspans content =
+  List.filter_map (function
+      | Tspan t -> Some t
+      | _ -> print_endline "Warning: non-tspan object in text.";
+        None) content
+
+let map_tspan f (t : tspan) =
+  let r : rect = f (rect_of_pos t.x t.y) in
+  { t with x = r.x; y = r.y }
+
+(* Apply a transform fn on the object *)
 let rec map_obj f = function
   | Rect r -> Rect (f r)
   | Image (r, href) -> Image (f r, href)
+  | Text t ->
+    let texts = List.map (map_tspan f) t.texts in
+    Text ({ t with texts })
   | Group (r, olist, []) ->
     let olist = List.map (map_obj f) olist in
     Group (f r, olist, [])
@@ -312,7 +372,7 @@ let rec map_obj f = function
     print_endline ("Error: transforms were not applied on group: " ^ r.id);
     g
 
-let transform_fn = function
+let transform_fn : transform -> rect -> rect = function
   | Translate (dx, dy) -> fun r ->
     let x, y = (r.x +. dx, r.y +. dy) in
     { r with x; y }
@@ -331,15 +391,14 @@ let finish_element data content el =
       print_endline (sprintf "%s = %s" key data);
       Var (key, data)
     end
-    (* else begin match find_var "" content with *)
-    (*   | Some v -> Var (key, v) *)
-    (*   | None -> begin *)
-    (*       print_endline (sprintf "Cannot find value for [%s]" key); *)
-    (*       Ignore *)
-    (*     end *)
-    (* end *)
   | Obj (Rect r) -> Obj (Rect {r with title; desc})
   | Obj (Image (r, href)) -> Obj (Image ({r with title; desc}, href))
+  | Obj (Text t) ->
+    (* We assume that Inkscape will write the actual text in a tspan object, not
+       in the text object. *)
+    assert (data = "");
+    let texts = find_tspans content in
+    Obj (Text { t with texts })
   | Obj (Group (r, olist, tlist)) ->
     (* TODO récupérer le rect ? *)
     assert (olist = []);
@@ -351,6 +410,7 @@ let finish_element data content el =
         let f = transform_fn tr in
         map_obj f o) (Group (r, olist, [])) tlist in
     Obj o
+  | Tspan t -> Tspan { t with text = data }
   | Svg (canvas, olist) ->
     assert (olist = []);
     let viewport = { canvas.viewport with title; desc } in
@@ -374,7 +434,8 @@ let rec pull_list name data content cnxs i d : (inkscape list * string) =
     if d > 0 then pull_list name data (el :: content) cnxs i d
     else (el :: content), data
   | `El_end ->
-    print_endline (sprintf "end list for [%s] (%i elements), d=%i" name (List.length content) d);
+    print_endline (sprintf "end list for [%s] (%i elements), d=%i"
+                     name (List.length content) d);
     content, data
   | `Data v -> print_endline (sprintf "Data = %s" v);
     if data <> "" && v <> data
@@ -389,13 +450,6 @@ and pull_element local el cnxs i d : inkscape =
   match finish_element data content el with
   | Connection c -> cnxs := c :: !cnxs; Ignore
   | fel -> fel
-(* let rec loop () = *)
-(*   match Xmlm.input i with *)
-(*   | `El_end -> print_endline "end element"; *)
-(*   | `Data d -> data := d; loop () *)
-(*   | `Dtd _ -> assert false *)
-(*   | `El_start _ -> failwith "El_start should not show up here" in *)
-(* loop () *)
 
 let parse file =
   let inch = open_in file in

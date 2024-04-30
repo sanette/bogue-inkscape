@@ -16,7 +16,17 @@ let no_trigger = "[(* write the required triggers here *)]"
 let get_action c =
  Option.value ~default:no_action c.I.action
 
-let write_connection c =
+let quote s = sprintf {|"%s"|} s
+
+let soption label to_string o =
+  match o with
+  | None -> ""
+  | Some value -> sprintf " ~%s:%s" label (to_string value)
+
+let scolor (r,g,b,a) =
+  sprintf "(%u,%u,%u,%u)" r g b a
+
+let sconnection c =
   let cid = new_conn_id () in
   let action = get_action c in
   sprintf "let c%u = W.connect %s %s %s %s in"
@@ -25,18 +35,27 @@ let write_connection c =
 let write_box out r =
   F.fprintf out "@[<hov 2>W.box ~w:%u ~h:%u ()@]" r.C.w r.C.h
 
-let write_button out label =
-  F.fprintf out {|@[<hov 2>W.button "%s"@]|} label (* TODO *)
+let write_button out style text =
+  let border_radius = soption "border_radius" string_of_int style.C.radius in
+  let border_color = soption "border_color" scolor style.C.stroke_color in
+  F.fprintf out {|@[<hov 2>W.button%s%s "%s"@]|} border_radius border_color text (* TODO *)
 
 let write_image out r file =
   F.fprintf out {|@[<hov 2>W.image ~w:%u ~h:%u "%s"@]|} r.C.w r.C.h file
 
-let write_widget out (w : C.widget) =
+(* https://www.w3.org/TR/SVG/text.html#GlyphsMetrics *)
+let write_label out label =
+  let font = soption "font" quote label.C.font in
+  F.fprintf out {|@[<hov 2>W.label ~size:%u%s ~fg:%s@ "%s"@]|}
+    label.C.size font (scolor label.C.color) label.C.text
+
+let write_widget out style (w : C.widget) =
   F.fprintf out "@[<hov 2>let %s =@ " w.C.id;
   let () = match w.C.content with
     | Box r -> write_box out r
-    | Button (_r, label) -> write_button out label
+    | Button (_r, text) -> write_button out style text
     | Image (r, href) -> write_image out r href
+    | Label (_r, label) -> write_label out label
   in
   F.fprintf out " in@]@;<1 0>"
 
@@ -45,16 +64,15 @@ let widget_pos (w : C.widget) = (* TODO à changer ? dans C aussi *)
   | Box r -> r.C.x, r.C.y
   | Button (r, _) -> r.C.x, r.C.y
   | Image (r, _) -> r.C.x, r.C.y
+  | Label (r, _) -> r.C.x, r.C.y
 
 (* TODO use canvas scale? *)
 let line_width x =
   if x <= 0 then 0 else if x <= 1 then 1 else x
 
-let write_border radius w =
-  let radius = match radius with
-    | None -> ""
-    | Some r -> sprintf "~radius:%i " r in
-  sprintf "mk_border %s(mk_line ~color ~width:%u ())" radius w
+let sborder radius w =
+  let radius = soption "radius" string_of_int radius in
+  sprintf "mk_border%s (mk_line ~color ~width:%u ())" radius w
 
 let write_bg out style =
   match style.C.fill, style.C.stroke_color, style.C.stroke_width with
@@ -81,33 +99,37 @@ let write_bg out style =
        (match style.C.radius with Some r when r <> 0 -> true | _ -> false)
     then print_endline "Warning: currently, a border with positive [radius] is \
                         not compatible with a transparent background.";
-    let border = write_border style.C.radius w in
+    let border = sborder style.C.radius w in
     Some (fun () ->
-        F.fprintf out "@[<hov 2>let color = (%u,%u,%u,%u) in@]@;<1 0>@[<hov 2>L.style_bg Style.(of_border (%s))@]" r g b a border)
-  | Some (r,g,b,a), Some (lr,lg,lb,la), Some stroke_width ->
+        F.fprintf out "@[<hov 2>let color = %s in@]@;<1 0>@[<hov 2>L.style_bg Style.(of_border (%s))@]" (scolor (r,g,b,a)) border)
+  | Some c, Some lc, Some stroke_width ->
     let w = line_width stroke_width in
-    let border = write_border style.C.radius w in
+    let border = sborder style.C.radius w in
     Some (fun () ->
-        F.fprintf out "@[<hov 2>let color = (%u,%u,%u,%u) in@]@;<1 0>@[<hov 2>let border =@ Style.(%s) in@]@;<1 0>@[<hov 2>let background =@ Style.color_bg (%u,%u,%u,%u) in@]@;<1 0>@[<hov 2>L.style_bg (Style.create ~background ~border ())@]" lr lg lb la border r g b a)
+        F.fprintf out "@[<hov 2>let color = %s in@]@;<1 0>@[<hov 2>let border =@ Style.(%s) in@]@;<1 0>@[<hov 2>let background =@ Style.color_bg %s in@]@;<1 0>@[<hov 2>L.style_bg (Style.create ~background ~border ())@]" (scolor lc) border (scolor c))
 
-let write_resident out name r style (w : C.widget) =
-  let name = match name with
-    | None -> ""
-    | Some t -> sprintf {| ~name:"%s"|} t in
+let pr_x x =
+  if x >= 0 then sprintf " ~x:%u" x else sprintf " ~x:(%i)" x
+
+let pr_y y =
+  if y >= 0 then sprintf " ~y:%u" y else sprintf " ~y:(%i)" y
+
+let write_resident out name r style (wg : C.widget) =
+  let name = soption "name" quote name in
   let opt = match write_bg out style with
     | None ->  ""
     | Some f -> F.fprintf out "@[<hov 2>let background =@ ";
       f ();
       F.fprintf out " in@]@;<1 0>";
-      "~background " in
-  F.fprintf out "@[<hov 2>L.resident%s@ %s~x:%i ~y:%i ~w:%u ~h:%u@ %s@]@;"
-    name opt r.C.x r.C.y r.C.w r.C.h w.C.id
+      "~background" in
+  let w = if r.C.w = 0 then "" else sprintf " ~w:%u" r.C.w in
+  let h = if r.C.h = 0 then "" else sprintf " ~h:%u" r.C.h in
+  F.fprintf out "@[<hov 2>L.resident%s@ %s%s%s%s%s@ %s@]@;"
+    name opt (pr_x r.C.x) (pr_y r.C.y) w h wg.C.id
 
 (* TODO don't use superpose when there is only 1 element *)
 let write_rooms out name r list =
-  let name = match name with
-    | None -> ""
-    | Some t -> sprintf {| ~name:"%s"|} t in
+  let name = soption "name" quote name in
   let ids = List.map (fun (w : C.layout) -> w.C.id) list in
   let w = if r.C.w = 0 then "" else sprintf " ~w:%u" r.C.w in
   let h = if r.C.h = 0 then "" else sprintf " ~h:%u" r.C.h in
@@ -161,19 +183,20 @@ let write ?file layout connections =
 
   let rec loop (l : C.layout) =
     let () = match l.C.content with
-      | Resident w -> write_widget out w
+      | Resident w -> write_widget out l.C.style w
       | Rooms list -> List.iter loop list in
     write_layout out l in
   loop layout;
   init_conn_id ();
   br ();
-  List.iter (fun c -> add (write_connection c)) connections;
+  List.iter (fun c -> add (sconnection c)) connections;
   let cs = Array.init (new_conn_id  () - 1) (fun i -> "c" ^ (string_of_int (i+1)))
            |> Array.to_list
            |> String.concat "; " in
-  add (sprintf "let connections = [%s] in" cs);
-  br ();
-  add (sprintf "Bogue.(run (of_layout ~connections %s))" layout.id);
+  let c_opt = match connections with
+    | [] -> ""
+    | _ -> add (sprintf "let connections = [%s] in" cs); br (); " ~connections" in
+  add (sprintf "Bogue.(run (of_layout%s %s))" c_opt layout.id);
   F.pp_close_box out ();
   F.pp_print_flush out ();
   Buffer.add_string buffer "\nlet () = main ()\n";
@@ -181,33 +204,12 @@ let write ?file layout connections =
 
 
 (*
+
 dune utop
 Sys.chdir "/home/san/prog/ocaml/bogue-inkscape";;
 let svg, c = Bogue_inkscape__Parse_inkscape.parse "bogue-inkscape.svg";;
 let l, c = Bogue_inkscape__Convert_inkscape.convert svg c;;
 Bogue_inkscape__Write_bogue.write l c |> print_endline;;
-
-let rect5 = W.box ~w:908 ~h:41 () in
-let rect5_l = L.resident ~x:1 ~y:48 ~w:908 ~h:41 rect5 in
-let rect3 = W.box ~w:182 ~h:86 () in
-let rect3_l = L.resident ~x:612 ~y:236 ~w:182 ~h:86 rect3 in
-let rect2 = W.box ~w:185 ~h:77 () in
-let rect2_l = L.resident ~x:626 ~y:132 ~w:185 ~h:77 rect2 in
-let g5 = L.superpose ~w:0 ~h:0 [rect3_l; rect2_l] in
-let button = W.box ~w:701 ~h:110 () in
-let button_l = L.resident ~x:63 ~y:974 ~w:701 ~h:110 button in
-let button2 = W.box ~w:450 ~h:277 () in
-let button2_l = L.resident ~x:252 ~y:536 ~w:450 ~h:277 button2 in
-let rect1 = W.box ~w:461 ~h:284 () in
-let rect1_l = L.resident ~x:60 ~y:135 ~w:461 ~h:284 rect1 in
-let layer1 = L.superpose ~w:0 ~h:0 [rect5_l; g5; button_l; button2_l; rect1_l] in
-let svg1 = L.superpose ~w:909 ~h:1286 [layer1] in
-let c1 = W.connect rect1_l rect3_l nop TODO in
-let c2 = W.connect button rect1_l mon_action TODO in
-let c3 = W.connect button rect1_l nop TODO in
-Bogue.(run (of_layout svg1))
-
-
 
 *)
 

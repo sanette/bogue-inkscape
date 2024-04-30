@@ -20,10 +20,6 @@ let convert ~output file =
   Out_channel.with_open_text output (fun outch ->
       output_string outch code)
 
-let old_file_to_string file =
-  let l,c = import file in
-  Old_write.write l c
-
 (*
 
 Sys.chdir "/home/san/prog/ocaml/bogue-inkscape";;

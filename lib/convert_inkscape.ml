@@ -18,15 +18,25 @@ type style = {
   stroke_color : I.color option;
   radius : int option}
 
+type label = {
+  size : int;
+  font : string option;
+  color : I.color;
+  text : string
+}
+
 type widget_content =
   | Box of rect
   | Button of (rect * string) (* à compléter? *)
   | Image of (rect * string)
+  | Label of (rect * label)
+
 type widget = { id : string; content : widget_content }
 
 type layout_content =
   | Resident of widget
-  | Rooms of layout list
+  | Rooms of layout list (* first room = below; contrary to Inkscape *)
+
 and layout = {
   id : string;
   name : string option;
@@ -56,8 +66,7 @@ let scalex canvas x =
 let scaley canvas y =
   round (y *. canvas.I.yscale)
 
-(* I.rect to rect *)
-let rect canvas r =
+let rect canvas (r : I.rect) : rect  =
   let x, y, w, h =
     scalex canvas r.I.x, scaley canvas r.I.y,
     scalex canvas r.I.w, scaley canvas r.I.h in
@@ -70,26 +79,38 @@ let style canvas s =
   let fill = s.I.fill in
   let stroke_color = s.I.stroke_color in
   let stroke_width = scaley_opt canvas s.I.stroke_width in
-  (* : TODO use x scale for too? *)
+  (* : TODO use x scale for this too? *)
   let radius = scaley_opt canvas s.I.radius in
   { fill; stroke_width; stroke_color; radius }
 
-(* TODO gérer le cas où le nouveau id existe déjà... *)
-let id pool r =
-  let id = r.I.id in
+let id pool id =
   if SSet.mem id !pool
   then print_endline "Error: id [%s] is not unique";
   pool := SSet.add id !pool;
   id
 
-let widget_of_rect pool canvas r : widget =
-  let id = id pool r in
+let idr pool (r : I.rect) =
+  id pool r.I.id
+
+let widget_of_rect pool canvas (r : I.rect) style : widget =
+  let id = idr pool r in
+  let rc = rect canvas r in
+  let rc = match style.stroke_width with
+    (* Bogue draws thick borders *inside* the box, contrary to Inkscape which
+       centers the thick line on the ideal box boundaries. The choice here is to
+       make to "external size" correct, but if there is a colored background and
+       the border is drawn with transparent color, there will be a difference in
+       rendering: for Bogue the border is drawn on top of the colored
+       background; for Inkscape, half-way overlapping. *)
+    | Some sw ->
+      {x = rc.x - sw/2; y = rc.y - sw/2; w = rc.w + sw; h = rc.h + sw }
+    | None -> rc in
   let content =
     match r.I.label with
     | Some "#Button" ->
       let label = Option.value ~default:"" r.I.desc in
-      Button (rect canvas r, label)
-    | _ -> Box (rect canvas r) in
+      Button (rc, label)
+    | _ -> Box rc in
   { id; content }
 
 let get_rect (wd : widget) =
@@ -97,6 +118,7 @@ let get_rect (wd : widget) =
   | Box r -> r
   | Button (r, _) -> r
   | Image (r, _) -> r
+  | Label (r, _) -> r
 
 let resident name style (wg : widget) : layout =
   let id = "" (* wg.id ^ "_l" *) in (* To be determined later *)
@@ -105,25 +127,59 @@ let resident name style (wg : widget) : layout =
   { id; name; rect; content; style }
 
 let widget_of_image pool canvas r href =
-  let id = id pool r in
+  (* TODO border size, cf widget_of_rect *)
+  let id = idr pool r in
   let content = Image (rect canvas r, href) in
   { id; content }
+
+let widget_of_tspan pool canvas font size color (t : I.tspan) =
+  let r = I.rect_of_pos ~id:t.I.id t.I.x t.I.y in
+  let id = idr pool r in
+  let r = rect canvas r in
+  let r = { r with y = r.y - size } in (* this seems to be a good approx *)
+  let label = { size; font; color; text = t.I.text } in
+  let content = Label (r, label) in
+  { id; content }
+
+let rect_of_tspans canvas (_ts : I.tspan list) =
+  (* TODO vérifier transforms *)
+  I.rect_of_pos 0. 0.
+  |> rect canvas
 
 let button_of_group _name _pool _canvas _olist =
   failwith "Not_implemented"
 
+let layout_of_text pool canvas t =
+  let rect = rect_of_tspans canvas t.I.texts in
+  let id = id pool t.I.id in
+  let style = style canvas I.no_style (* TODO style *) in
+  let size = scalex canvas t.I.font_size in
+  let font = match t.I.font_family with
+    | "sans-serif" -> None
+    | s -> Some s in
+  let ws = List.map (widget_of_tspan pool canvas
+                       font size t.I.color) t.I.texts
+           |> List.map (resident None style) in
+  let content = Rooms (List.rev ws) in
+  { id; name=None ; rect; content; style }
+
+
 let rec layout_of_group name pool canvas (r, olist) =
-  let id = id pool r in
+  let id = idr pool r in
   let rect = rect canvas r in
   let style = style canvas r.I.style in
-  let content = Rooms (List.map (layout_of_obj pool canvas) olist) in
+  let content = Rooms (List.map (layout_of_obj pool canvas) olist
+                       |> List.rev) in
   { id; name; rect; content; style }
 
 and layout_of_obj pool canvas = function
-  | I.Rect r -> widget_of_rect pool canvas r
-                |> resident r.I.title (style canvas r.I.style)
+  | I.Rect r ->
+    let style = style canvas r.I.style in
+    widget_of_rect pool canvas r style
+    |> resident r.I.title style
   | I.Image (r, href) -> widget_of_image pool canvas r href
                          |> resident r.I.title (style canvas r.I.style)
+  | I.Text t -> layout_of_text pool canvas t
   | I.Group (r, olist, []) -> begin
       match r.I.label with
       | Some "#Button" -> button_of_group r.I.title pool canvas olist
@@ -144,7 +200,10 @@ let layout_of_svg (canvas, olist) =
     | Error (s,msg) -> print_endline msg; s in
   let layout =
     l |> map_layout (fun (ll : layout) ->
-        let id = if ll.id = "" then "" else Hashtbl.find table ll.id in
+        let id = if ll.id = "" then ""
+          else try Hashtbl.find table ll.id
+            with Not_found ->
+              failwith (Printf.sprintf "ll.id=%s not found" ll.id) in
         { ll with id })
     |> map_resident (fun ll w ->
         assert (ll.id = "");
@@ -185,7 +244,6 @@ dune utop
 
 Sys.chdir "/home/san/prog/ocaml/bogue-inkscape";;
 let svg, c = Bogue_inkscape__Parse_inkscape.parse "bogue-inkscape.svg";;
-let table, layout = Bogue_inkscape.layout_of_svg svg;;
-update_connections_ids table c
+let table, layout =  Bogue_inkscape__Convert_inkscape.convert svg c;;
 
 *)
