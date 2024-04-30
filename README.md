@@ -52,9 +52,9 @@ Each Bogue widget will be inserted into a layout for positioning. The
 layout name is the same as the widget name with `"_l"` appended.
 
 
-|--------------------+-----------------------+-------------------------+----------------+----------------------+-----------------------------+------------------+---------------------+----------------------------------------|
+
 | Inkscape object    | Inkscape ID           | Inkscape Label          | Inkscape Title | Inkscape Description | Bogue type                  | Bogue identifier | Bogue name          | Bogue parameters                       |
-|--------------------+-----------------------+-------------------------+----------------+----------------------+-----------------------------+------------------+---------------------+----------------------------------------|
+|--------------------|-----------------------|-------------------------|----------------|----------------------|-----------------------------|------------------|---------------------|----------------------------------------|
 | Rectangle (R)      | [any unique ocaml id] | #Box or #rectxxx        | [any string]   |                      | Box widget                  | Inkscape ID      | Inkscape Title TODO |                                        |
 | Rectangle (R)      | [any unique ocaml id] | #Button                 | [any string]   |                      | Button widget               | Inkscape ID      | Inkscape Title TODO | label = Inkscape Desc                  |
 | Linked Image (C-I) | [any unique ocaml id] | #Image or #imagexxx     | [any string]   |                      | Image widget                | Inkscape ID      | Inkscape Title TODO |                                        |
@@ -62,13 +62,17 @@ layout name is the same as the widget name with `"_l"` appended.
 | Group (C-S-O)      | [any unique ocaml id] | #Layout or #gxxx        | [any string]   |                      | Layout                      | Inkscape ID      | Inkscape Title      |                                        |
 | Group (C-S-O)      | [any unique ocaml id] | #Button                 | [any string]   |                      | Button widget w/ label TODO | Inkscape ID      | Inkscape Title      | group should contain a rect and a text |
 | Connector (O)      | [any unique ocaml id] | #Connection or #pathxxx | [any ocaml id] |                      | Connection                  | Inkscape ID      | N/A                 | action = Inkscape Title                |
-|--------------------+-----------------------+-------------------------+----------------+----------------------+-----------------------------+------------------+---------------------+----------------------------------------|
+|--------------------|-----------------------|-------------------------|----------------|----------------------|-----------------------------|------------------|---------------------|----------------------------------------|
 | Layer              | layerxxx              |                         |                |                      | layer                       |                  |                     |                                        |
-|--------------------+-----------------------+-------------------------+----------------+----------------------+-----------------------------+------------------+---------------------+----------------------------------------|
+|--------------------|-----------------------|-------------------------|----------------|----------------------|-----------------------------|------------------|---------------------|----------------------------------------|
 
-|--------------------------------------------+-------------|
-| Document properties --> Metadata --> Title | Bogue title |
-|--------------------------------------------+-------------|
+
+Special setting:
+
+. | .
+--------------------------------------------|-------------
+ Document properties --> Metadata --> Title | Bogue title 
+
 
 ## Notes
 
