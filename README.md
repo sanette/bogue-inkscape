@@ -69,7 +69,7 @@ layout name is the same as the widget name with `"_l"` appended.
 
 Special setting:
 
-
+ | 
 --------------------------------------------|-------------
  Document properties --> Metadata --> Title | Bogue title 
 
