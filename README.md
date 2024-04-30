@@ -36,9 +36,10 @@ Use Inkscape to help code Bogue designs.
 In order to be correctly recognized, the Inkscape document must be
 carefully prepared. Obviously, the *type* of Inkscape objects is of
 course important, but not only: we also use the *ID*, the *label*, and
-(optionally), the *Description*. These fields can be modified in
-Inkscape with `CTRL-SHIFT-o` (or right click on the object and select
-"Object properties"). Click on "define" after each modification.
+(optionally), the *title* (and maybe the *Description*). These fields
+can be modified in Inkscape with `CTRL-SHIFT-o` (or right click on the
+object and select "Object properties"). Click on "define" after each
+modification.
 
 Here is the dictionary
 

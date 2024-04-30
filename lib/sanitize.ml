@@ -1,6 +1,10 @@
-(* Sanitize identifiers *)
+(* This file is part of Bogue-inkscape
 
-(* This file is part of Bogue-inkscape *)
+   Copyright Vu Ngoc San 2024
+
+   This module is used to sanitize Inkscape ids to make sure they are valid
+   ocaml identifiers.
+*)
 
 module SSet = Set.Make(String)
 open Printf

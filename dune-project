@@ -5,11 +5,11 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github sanette/bogue-inkscape))
 
-(authors "Author Name")
+(maintainers "Vu Ngoc San <san.vu-ngoc@laposte.net>")
 
-(maintainers "Maintainer Name")
+(authors "Vu Ngoc San <san.vu-ngoc@laposte.net>")
 
 (license LICENSE)
 
@@ -17,10 +17,9 @@
 
 (package
  (name bogue-inkscape)
- (synopsis "A short synopsis")
- (description "A longer description")
+ (synopsis "Use Inkscape to create Bogue GUI designs")
  (depends ocaml dune xmlm)
  (tags
-  (topics "to describe" your project)))
+  ("gui")))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

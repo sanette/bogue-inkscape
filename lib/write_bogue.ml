@@ -1,4 +1,9 @@
-(* Write Bogue code from simplified types *)
+(* This file is part of Bogue-inkscape
+
+   Copyright Vu Ngoc San 2024
+
+   This module writes Bogue code from simplified types defined in Bogue_convert
+*)
 
 module C = Convert_inkscape
 module I = Parse_inkscape
