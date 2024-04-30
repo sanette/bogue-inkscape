@@ -62,14 +62,14 @@ layout name is the same as the widget name with `"_l"` appended.
 | Group (C-S-O)      | [any unique ocaml id] | #Layout or #gxxx        | [any string]   |                      | Layout                      | Inkscape ID      | Inkscape Title      |                                        |
 | Group (C-S-O)      | [any unique ocaml id] | #Button                 | [any string]   |                      | Button widget w/ label TODO | Inkscape ID      | Inkscape Title      | group should contain a rect and a text |
 | Connector (O)      | [any unique ocaml id] | #Connection or #pathxxx | [any ocaml id] |                      | Connection                  | Inkscape ID      | N/A                 | action = Inkscape Title                |
-|--------------------|-----------------------|-------------------------|----------------|----------------------|-----------------------------|------------------|---------------------|----------------------------------------|
+|------|-------|--------|-----|-------|---------|-------|------|----------------|
 | Layer              | layerxxx              |                         |                |                      | layer                       |                  |                     |                                        |
-|--------------------|-----------------------|-------------------------|----------------|----------------------|-----------------------------|------------------|---------------------|----------------------------------------|
+
 
 
 Special setting:
 
-. | .
+
 --------------------------------------------|-------------
  Document properties --> Metadata --> Title | Bogue title 
 
