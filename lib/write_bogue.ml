@@ -122,14 +122,14 @@ let pr_y y =
 let write_resident out name r style (wg : C.widget) =
   let name = soption "name" quote name in
   let opt = match write_bg out style with
-    | None ->  ""
+    | None -> ""
     | Some f -> F.fprintf out "@[<hov 2>let background =@ ";
       f ();
       F.fprintf out " in@]@;<1 0>";
-      "~background" in
+      " ~background" in
   let w = if r.C.w = 0 then "" else sprintf " ~w:%u" r.C.w in
   let h = if r.C.h = 0 then "" else sprintf " ~h:%u" r.C.h in
-  F.fprintf out "@[<hov 2>L.resident%s@ %s%s%s%s%s@ %s@]@;"
+  F.fprintf out "@[<hov 2>L.resident%s%s%s%s%s%s@ %s@]@;"
     name opt (pr_x r.C.x) (pr_y r.C.y) w h wg.C.id
 
 (* TODO don't use superpose when there is only 1 element *)

@@ -15,6 +15,8 @@ parse "bogue-inkscape.svg";;
 
 *)
 
+let tested_versions = [ (1,3,2) ]
+
 open Printf
 
 (* DPI for which Bogue scale=1 *)
@@ -74,6 +76,8 @@ type text = {
   texts : tspan list
 }
 
+type version = int * int * int
+
 type obj =
   | Rect of rect
   | Image of (rect * string)
@@ -81,7 +85,7 @@ type obj =
   | Group of group
 and group = rect * (obj list) * (transform list)
 
-type svg = canvas * (obj list)
+type svg = canvas * (obj list) * (version option)
 type connection = { src : string; dst : string; action : string option }
 type var = string * string
 
@@ -105,6 +109,13 @@ let find_attr a name =
   match find_attr_opt a name with
   | Some v -> v
   | None -> failwith (sprintf "Cannot find attribute [%s]" name)
+
+(* Inkscape version *)
+let find_version a =
+  List.find_opt (fun ((url, n), _) ->
+      n = "version" && Filename.basename url = "inkscape") a
+  |> Option.map snd
+  |> Option.map (fun v -> Scanf.sscanf v "%u.%u.%u" (fun a b c -> (a,b,c)))
 
 let find_float a name =
   float_of_string (find_attr a name)
@@ -230,9 +241,10 @@ let parse_style ~radius s =
                      |> option_bind (parse_color stroke_opacity) in
   { fill; stroke_color; stroke_width; radius }
 
-let parse_svg a : canvas =
+let parse_svg a =
   if find_attr_opt a "inkscape" = None
   then failwith "This does not seem to be an Inkscape file";
+  let version = find_version a in
   let fwidth, xunit = find_attr a "width" |> parse_dim in
   let fheight, yunit = find_attr a "height" |> parse_dim in
   let x, y, w, h = find_attr_opt a "viewBox"
@@ -246,7 +258,7 @@ let parse_svg a : canvas =
   let label = find_attr_opt a "label" in
   let viewport = { id; label; title = None; desc = None; x; y; w; h;
                    style = no_style } in
-  { viewport; width; height; xscale; yscale }
+  version, { viewport; width; height; xscale; yscale }
 
 let option_to_list = function
   | Some l -> l
@@ -321,7 +333,7 @@ let parse_tspan a =
   { id; x; y; text = "" }
 
 let parse_element a = function
-  | "svg" -> Svg (parse_svg a, [])
+  | "svg" -> let version, canvas = parse_svg a in Svg (canvas, [], version)
   | "g" -> Obj (Group (parse_group a))
   | "rect" -> Obj (Rect (parse_rect a))
   | "path" -> begin
@@ -380,7 +392,7 @@ let transform_fn : transform -> rect -> rect = function
     fun r -> r
 
 (* Second (local) pass: we use the Var to fill in missing fields *)
-let finish_element data content el =
+let finish_element ?(simplify=true) data content el =
   let title = find_var "title" content |> Option.map String.trim in
   let desc = find_var "desc" content |> Option.map String.trim in
   match el with
@@ -409,15 +421,27 @@ let finish_element data content el =
     let o = List.fold_left (fun o tr ->
         let f = transform_fn tr in
         map_obj f o) (Group (r, olist, [])) tlist in
-    Obj o
+    if simplify then match o with
+      | Group (_, [], _) -> Ignore
+      | Group (_, [o], _)-> Obj o
+      | _ -> Obj o
+    else Obj o
   | Tspan t -> Tspan { t with text = data }
-  | Svg (canvas, olist) ->
+  | Svg (canvas, olist, version) ->
+    let () =  match version with
+      | None -> print_endline
+                  "Warning: Inkscape version not detected in SVG document"
+      | Some (a,b,c) ->
+        if not (List.mem (a,b,c) tested_versions)
+        then print_endline
+            (sprintf "Warning: Inkscape version %u.%u.%u was not \
+                      tested with this version of Bogue-inkscape." a b c ) in
     assert (olist = []);
     let viewport = { canvas.viewport with title; desc } in
     let olist = List.filter_map (function
         | Obj o -> Some o
         | _ -> None) content in
-    Svg ({ canvas with viewport }, olist)
+    Svg ({ canvas with viewport }, olist, version)
   | Connection c -> Connection { c with action = title }
 
 (*

@@ -149,7 +149,7 @@ let rect_of_tspans canvas (_ts : I.tspan list) =
 let button_of_group _name _pool _canvas _olist =
   failwith "Not_implemented"
 
-let layout_of_text pool canvas t =
+let layout_of_text ?(simplify = true) pool canvas t =
   let rect = rect_of_tspans canvas t.I.texts in
   let id = id pool t.I.id in
   let style = style canvas I.no_style (* TODO style *) in
@@ -160,8 +160,11 @@ let layout_of_text pool canvas t =
   let ws = List.map (widget_of_tspan pool canvas
                        font size t.I.color) t.I.texts
            |> List.map (resident None style) in
-  let content = Rooms (List.rev ws) in
-  { id; name=None ; rect; content; style }
+  match ws with
+  | [ l ] when simplify ->
+    pool := SSet.remove id !pool; l
+  | _ -> let content = Rooms (List.rev ws) in
+    { id; name=None ; rect; content; style }
 
 
 let rec layout_of_group name pool canvas (r, olist) =
@@ -187,7 +190,7 @@ and layout_of_obj pool canvas = function
     end
   | I.Group _ -> failwith "tlist should be empty here"
 
-let layout_of_svg (canvas, olist) =
+let layout_of_svg (canvas, olist, _version) =
   let r = canvas.I.viewport in
   let pool = ref SSet.empty in
   let l = layout_of_group r.I.title pool canvas (r, olist) in
