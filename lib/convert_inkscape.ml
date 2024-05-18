@@ -7,22 +7,24 @@
 *)
 
 module I = Parse_inkscape
-module SSet = Set.Make(String)
+module SSet = Set.Make (String)
 
 (* We introduce simplified Bogue types *)
 
 type rect = { x : int; y : int; w : int; h : int }
+
 type style = {
   fill : I.color option;
   stroke_width : int option;
   stroke_color : I.color option;
-  radius : int option}
+  radius : int option;
+}
 
 type label = {
   size : int;
   font : string option;
   color : I.color;
-  text : string
+  text : string;
 }
 
 type widget_content =
@@ -42,38 +44,38 @@ and layout = {
   name : string option;
   rect : rect;
   content : layout_content;
-  style : style }
+  style : style;
+}
 
 let rec map_resident f l =
   match l.content with
   | Resident w -> f l w
-  | Rooms rs -> let rs = List.map (map_resident f) rs in
-    { l with content = Rooms rs }
+  | Rooms rs ->
+      let rs = List.map (map_resident f) rs in
+      { l with content = Rooms rs }
 
 let rec map_layout f l =
   match l.content with
   | Resident _ -> f l
   | Rooms rs ->
-    let ll = f l in
-    let rs = List.map (map_layout f) rs in
-    { ll with content = Rooms rs }
+      let ll = f l in
+      let rs = List.map (map_layout f) rs in
+      { ll with content = Rooms rs }
 
 let round x = int_of_float (Float.round x)
+let scalex canvas x = round (x *. canvas.I.xscale)
+let scaley canvas y = round (y *. canvas.I.yscale)
 
-let scalex canvas x =
-  round (x *. canvas.I.xscale)
-
-let scaley canvas y =
-  round (y *. canvas.I.yscale)
-
-let rect canvas (r : I.rect) : rect  =
+let rect canvas (r : I.rect) : rect =
   let x, y, w, h =
-    scalex canvas r.I.x, scaley canvas r.I.y,
-    scalex canvas r.I.w, scaley canvas r.I.h in
+    ( scalex canvas r.I.x,
+      scaley canvas r.I.y,
+      scalex canvas r.I.w,
+      scaley canvas r.I.h )
+  in
   { x; y; w; h }
 
-let scaley_opt canvas t =
-  Option.map (scaley canvas) t
+let scaley_opt canvas t = Option.map (scaley canvas) t
 
 let style canvas s =
   let fill = s.I.fill in
@@ -84,18 +86,17 @@ let style canvas s =
   { fill; stroke_width; stroke_color; radius }
 
 let id pool id =
-  if SSet.mem id !pool
-  then print_endline "Error: id [%s] is not unique";
+  if SSet.mem id !pool then print_endline "Error: id [%s] is not unique";
   pool := SSet.add id !pool;
   id
 
-let idr pool (r : I.rect) =
-  id pool r.I.id
+let idr pool (r : I.rect) = id pool r.I.id
 
 let widget_of_rect pool canvas (r : I.rect) style : widget =
   let id = idr pool r in
   let rc = rect canvas r in
-  let rc = match style.stroke_width with
+  let rc =
+    match style.stroke_width with
     (* Bogue draws thick borders *inside* the box, contrary to Inkscape which
        centers the thick line on the ideal box boundaries. The choice here is to
        make to "external size" correct, but if there is a colored background and
@@ -103,14 +104,21 @@ let widget_of_rect pool canvas (r : I.rect) style : widget =
        rendering: for Bogue the border is drawn on top of the colored
        background; for Inkscape, half-way overlapping. *)
     | Some sw ->
-      {x = rc.x - sw/2; y = rc.y - sw/2; w = rc.w + sw; h = rc.h + sw }
-    | None -> rc in
+        {
+          x = rc.x - (sw / 2);
+          y = rc.y - (sw / 2);
+          w = rc.w + sw;
+          h = rc.h + sw;
+        }
+    | None -> rc
+  in
   let content =
     match r.I.label with
     | Some "#Button" ->
-      let label = Option.value ~default:"" r.I.desc in
-      Button (rc, label)
-    | _ -> Box rc in
+        let label = Option.value ~default:"" r.I.desc in
+        Button (rc, label)
+    | _ -> Box rc
+  in
   { id; content }
 
 let get_rect (wd : widget) =
@@ -121,7 +129,8 @@ let get_rect (wd : widget) =
   | Label (r, _) -> r
 
 let resident name style (wg : widget) : layout =
-  let id = "" (* wg.id ^ "_l" *) in (* To be determined later *)
+  let id = "" (* wg.id ^ "_l" *) in
+  (* To be determined later *)
   let rect = get_rect wg in
   let content = Resident wg in
   { id; name; rect; content; style }
@@ -136,58 +145,57 @@ let widget_of_tspan pool canvas font size color (t : I.tspan) =
   let r = I.rect_of_pos ~id:t.I.id t.I.x t.I.y in
   let id = idr pool r in
   let r = rect canvas r in
-  let r = { r with y = r.y - size } in (* this seems to be a good approx *)
+  let r = { r with y = r.y - size } in
+  (* this seems to be a good approx *)
   let label = { size; font; color; text = t.I.text } in
   let content = Label (r, label) in
   { id; content }
 
 let rect_of_tspans canvas (_ts : I.tspan list) =
   (* TODO vérifier transforms *)
-  I.rect_of_pos 0. 0.
-  |> rect canvas
+  I.rect_of_pos 0. 0. |> rect canvas
 
-let button_of_group _name _pool _canvas _olist =
-  failwith "Not_implemented"
+let button_of_group _name _pool _canvas _olist = failwith "Not_implemented"
 
 let layout_of_text ?(simplify = true) pool canvas t =
   let rect = rect_of_tspans canvas t.I.texts in
   let id = id pool t.I.id in
   let style = style canvas I.no_style (* TODO style *) in
   let size = scalex canvas t.I.font_size in
-  let font = match t.I.font_family with
-    | "sans-serif" -> None
-    | s -> Some s in
-  let ws = List.map (widget_of_tspan pool canvas
-                       font size t.I.color) t.I.texts
-           |> List.map (resident None style) in
+  let font = match t.I.font_family with "sans-serif" -> None | s -> Some s in
+  let ws =
+    List.map (widget_of_tspan pool canvas font size t.I.color) t.I.texts
+    |> List.map (resident None style)
+  in
   match ws with
   | [ l ] when simplify ->
-    pool := SSet.remove id !pool; l
-  | _ -> let content = Rooms (List.rev ws) in
-    { id; name=None ; rect; content; style }
-
+      pool := SSet.remove id !pool;
+      l
+  | _ ->
+      let content = Rooms (List.rev ws) in
+      { id; name = None; rect; content; style }
 
 let rec layout_of_group name pool canvas (r, olist) =
   let id = idr pool r in
   let rect = rect canvas r in
   let style = style canvas r.I.style in
-  let content = Rooms (List.map (layout_of_obj pool canvas) olist
-                       |> List.rev) in
+  let content =
+    Rooms (List.map (layout_of_obj pool canvas) olist |> List.rev)
+  in
   { id; name; rect; content; style }
 
 and layout_of_obj pool canvas = function
   | I.Rect r ->
-    let style = style canvas r.I.style in
-    widget_of_rect pool canvas r style
-    |> resident r.I.title style
-  | I.Image (r, href) -> widget_of_image pool canvas r href
-                         |> resident r.I.title (style canvas r.I.style)
+      let style = style canvas r.I.style in
+      widget_of_rect pool canvas r style |> resident r.I.title style
+  | I.Image (r, href) ->
+      widget_of_image pool canvas r href
+      |> resident r.I.title (style canvas r.I.style)
   | I.Text t -> layout_of_text pool canvas t
-  | I.Group (r, olist, []) -> begin
+  | I.Group (r, olist, []) -> (
       match r.I.label with
       | Some "#Button" -> button_of_group r.I.title pool canvas olist
-      | _ -> layout_of_group r.I.title pool canvas (r, olist)
-    end
+      | _ -> layout_of_group r.I.title pool canvas (r, olist))
   | I.Group _ -> failwith "tlist should be empty here"
 
 let layout_of_svg (canvas, olist, _version) =
@@ -198,33 +206,42 @@ let layout_of_svg (canvas, olist, _version) =
   (* Now we replace inkscape ids by ocaml ids *)
   let table, new_pool = Sanitize.sanitize_set !pool in
   Sanitize.print_table table;
-  let suffix = match Sanitize.valid_suffix "_l" new_pool with
+  let suffix =
+    match Sanitize.valid_suffix "_l" new_pool with
     | Ok s -> s
-    | Error (s,msg) -> print_endline msg; s in
+    | Error (s, msg) ->
+        print_endline msg;
+        s
+  in
   let layout =
-    l |> map_layout (fun (ll : layout) ->
-        let id = if ll.id = "" then ""
-          else try Hashtbl.find table ll.id
-            with Not_found ->
-              failwith (Printf.sprintf "ll.id=%s not found" ll.id) in
-        { ll with id })
+    l
+    |> map_layout (fun (ll : layout) ->
+           let id =
+             if ll.id = "" then ""
+             else
+               try Hashtbl.find table ll.id
+               with Not_found ->
+                 failwith (Printf.sprintf "ll.id=%s not found" ll.id)
+           in
+           { ll with id })
     |> map_resident (fun ll w ->
-        assert (ll.id = "");
-        let id = Hashtbl.find table w.id in
-        let w = { w with id } in
-        let id_l = id ^ suffix in
-        Hashtbl.add table id_l id_l;
-        { ll with id = id_l; content = Resident w })  in
-  table, layout
+           assert (ll.id = "");
+           let id = Hashtbl.find table w.id in
+           let w = { w with id } in
+           let id_l = id ^ suffix in
+           Hashtbl.add table id_l id_l;
+           { ll with id = id_l; content = Resident w })
+  in
+  (table, layout)
 
 let layout_of_ink = function
-  | I.Svg s -> layout_of_svg  s
+  | I.Svg s -> layout_of_svg s
   | _ -> failwith "Not a valid Inkscape data"
 
 (* if s = "#abcd" we look for the key "abcd" in the table *)
 let find_hashtag table s =
-  if s <> "" && s.[0] = '#'
-  then Hashtbl.find table (String.sub s 1 (String.length s - 1))
+  if s <> "" && s.[0] = '#' then
+    Hashtbl.find table (String.sub s 1 (String.length s - 1))
   else s
 
 let update_connection_id table c =
@@ -233,13 +250,12 @@ let update_connection_id table c =
   let src = find_hashtag table c.src in
   { c with src; dst }
 
-let update_connections_ids table cs =
-  List.map (update_connection_id table) cs
+let update_connections_ids table cs = List.map (update_connection_id table) cs
 
 let convert svg c =
   let table, layout = layout_of_svg svg in
   let c = update_connections_ids table c in
-  layout, c
+  (layout, c)
 
 (*
 

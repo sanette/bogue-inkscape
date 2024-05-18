@@ -2,16 +2,17 @@
 
 (name bogue-inkscape)
 
+(version "alpha")
+
 (generate_opam_files true)
 
-(source
- (github sanette/bogue-inkscape))
+(source (github sanette/bogue-inkscape))
 
 (maintainers "Vu Ngoc San <san.vu-ngoc@laposte.net>")
 
 (authors "Vu Ngoc San <san.vu-ngoc@laposte.net>")
 
-(license LICENSE)
+(license LGPL-3.0-or-later)
 
 (documentation https://url/to/documentation)
 
@@ -21,5 +22,3 @@
  (depends ocaml dune xmlm)
  (tags
   ("gui")))
-
-; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

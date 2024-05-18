@@ -6,13 +6,13 @@
    ocaml identifiers.
 *)
 
-module SSet = Set.Make(String)
+module SSet = Set.Make (String)
 open Printf
 
 let is_letter char =
   let c = Char.code char in
-  (c <= Char.code 'z' && c >= Char.code 'a') ||
-  (c <= Char.code 'Z' && c >= Char.code 'A')
+  (c <= Char.code 'z' && c >= Char.code 'a')
+  || (c <= Char.code 'Z' && c >= Char.code 'A')
 
 let is_digit char =
   let c = Char.code char in
@@ -22,33 +22,34 @@ let is_digit char =
 let sanitize_id s =
   let message = ref [] in
   let add msg = message := msg :: !message in
-  if s = "" then raise (Invalid_argument "Identifier String should not be empty");
+  if s = "" then
+    raise (Invalid_argument "Identifier String should not be empty");
   let b = Buffer.create (String.length s) in
-  String.iter (fun c ->
+  String.iter
+    (fun c ->
       if is_digit c || is_letter c || c = '_' then Buffer.add_char b c
-      else if c = ' '
-      then begin
+      else if c = ' ' then (
         add "Space char was replaced by underscore";
-        Buffer.add_char b '_'
-      end
-      else add (sprintf "Skipping invalid char : [%c]" c)) s;
+        Buffer.add_char b '_')
+      else add (sprintf "Skipping invalid char : [%c]" c))
+    s;
   let res = Buffer.contents b in
-  if res = "" then raise
+  if res = "" then
+    raise
       (Invalid_argument
          (sprintf "Identifier String [%s] contains only invalid chars" res));
   let c = res.[0] in
   let res =
     if Char.lowercase_ascii c = c then res
-    else
-      begin
-        add (sprintf "Lowering the case of the first letter of [%s]" res);
-        (String.make 1 (Char.lowercase_ascii c)) ^ String.sub res 1 (String.length res - 1)
-      end in
+    else (
+      add (sprintf "Lowering the case of the first letter of [%s]" res);
+      String.make 1 (Char.lowercase_ascii c)
+      ^ String.sub res 1 (String.length res - 1))
+  in
   if res = s then Ok res
-  else begin
+  else (
     add (sprintf "Identifier [%s] was sanitized to [%s]" s res);
-    Error (res, List.rev !message)
-  end
+    Error (res, List.rev !message))
 
 let test_sanitize () =
   let ok s = failwith (sprintf "[%s] should not be OK" s) in
@@ -64,24 +65,25 @@ let test_sanitize () =
 let sanitize_set pool =
   let pool2 = ref SSet.empty in
   let safe = Hashtbl.create 20 in
-  SSet.iter (fun id ->
+  SSet.iter
+    (fun id ->
       match sanitize_id id with
       | Ok sid -> Hashtbl.add safe id sid
       | Error (sid, msg) ->
-        List.iter print_endline msg;
-        let rec loop s i =
-          if SSet.mem s pool || SSet.mem s !pool2
-          then loop (sid ^ (string_of_int (i+1))) (i+1)
-          else s in
-        let sid = loop sid 1 in
-        pool2 := SSet.add sid !pool2;
-        Hashtbl.add safe id sid)
+          List.iter print_endline msg;
+          let rec loop s i =
+            if SSet.mem s pool || SSet.mem s !pool2 then
+              loop (sid ^ string_of_int (i + 1)) (i + 1)
+            else s
+          in
+          let sid = loop sid 1 in
+          pool2 := SSet.add sid !pool2;
+          Hashtbl.add safe id sid)
     pool;
-  safe, !pool2
+  (safe, !pool2)
 
 let print_table t =
-  Hashtbl.iter (fun id sid -> print_endline (sprintf "[%s] ==> [%s]" id sid))
-    t
+  Hashtbl.iter (fun id sid -> print_endline (sprintf "[%s] ==> [%s]" id sid)) t
 
 (*
 
@@ -117,13 +119,19 @@ Identifier [éabcd] was sanitized to [abcd]
    (by adding a number) to make it so. *)
 let valid_suffix sfx pool =
   let rec loop suffix i =
-    if SSet.exists (String.ends_with ~suffix) pool
-    then loop (suffix ^ (string_of_int (i+1))) (i+1)
-    else suffix, i in
+    if SSet.exists (String.ends_with ~suffix) pool then
+      loop (suffix ^ string_of_int (i + 1)) (i + 1)
+    else (suffix, i)
+  in
   let suffix, i = loop sfx 1 in
   if i = 1 then Ok suffix
-  else Error (suffix, (sprintf "Suffix [%s] had to be modified to [%s] because \
-                                some ids already end with [%s]" sfx suffix sfx))
+  else
+    Error
+      ( suffix,
+        sprintf
+          "Suffix [%s] had to be modified to [%s] because some ids already end \
+           with [%s]"
+          sfx suffix sfx )
 
 (*
 
